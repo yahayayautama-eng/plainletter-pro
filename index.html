@@ -106,6 +106,28 @@
       background: #fff;
     }
 
+    .key-bar {
+      margin-top: 14px;
+      display: flex;
+      gap: 10px;
+      align-items: center;
+    }
+
+    .key-bar input {
+      flex: 1;
+      padding: 10px 14px;
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      font-size: 0.9rem;
+      background: #fdfcfb;
+      color: var(--ink);
+    }
+
+    .key-bar input:focus {
+      outline: none;
+      border-color: var(--teal);
+    }
+
     button {
       width: 100%;
       margin-top: 14px;
@@ -293,6 +315,12 @@
     <div class="input-card">
       <label for="letterInput">Confusing Document Text</label>
       <textarea id="letterInput" placeholder="Example: 'Your claim #82910 has been processed with code CO-16 (Claim/service lacks information or has submission/billing error(s)...'"></textarea>
+      
+      <div class="key-bar">
+        <input type="password" id="apiKeyInput" placeholder="Gemini API Key (saved in browser)" />
+        <a href="https://aistudio.google.com/app/apikey" target="_blank" style="font-size:0.82rem; color:var(--teal); text-decoration:underline; white-space:nowrap;">Get Free Key</a>
+      </div>
+
       <button id="translateBtn" onclick="translateDocument()">
         <span>✨ Translate to Plain English</span>
       </button>
@@ -335,15 +363,30 @@
   </div>
 
   <script>
-    const API_KEY = "AQ.Ab8RN6LDd7-F2UCA7OmTOM9o1L6QOstRvKzwSo7YvaOfzIzuwg";
-    const ENDPOINT = `https://generativelanguage.googleapis.com/v1beta/models/gemini-3.8-flash:generateContent?key=${API_KEY}`;
+    // Load saved API key from localStorage if exists
+    const savedKey = localStorage.getItem("PLAINLETTER_API_KEY");
+    if (savedKey) {
+      document.getElementById('apiKeyInput').value = savedKey;
+    }
 
     async function translateDocument() {
       const input = document.getElementById('letterInput').value.trim();
+      let key = document.getElementById('apiKeyInput').value.trim();
+
       if (!input) {
         alert("Please paste some text from your letter first!");
         return;
       }
+
+      if (!key) {
+        key = prompt("Please enter your free Google Gemini API Key:\n(You can get one in 10 seconds at https://aistudio.google.com/app/apikey)");
+        if (!key || !key.trim()) return;
+        key = key.trim();
+        document.getElementById('apiKeyInput').value = key;
+      }
+
+      // Save to localStorage for frictionless future visits
+      localStorage.setItem("PLAINLETTER_API_KEY", key);
 
       const btn = document.getElementById('translateBtn');
       const loader = document.getElementById('loader');
@@ -370,8 +413,10 @@ Letter:
 ${input}
       `;
 
+      const endpoint = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${key}`;
+
       try {
-        const response = await fetch(ENDPOINT, {
+        const response = await fetch(endpoint, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
@@ -380,20 +425,21 @@ ${input}
         });
 
         if (!response.ok) {
-          throw new Error(`API error (${response.status})`);
+          const errData = await response.json().catch(() => ({}));
+          throw new Error(errData?.error?.message || `API error (${response.status})`);
         }
 
         const data = await response.json();
         let raw = data.candidates[0].content.parts[0].text.trim();
 
-        if (raw.startsWith("```json")) raw = raw.slice(7);
-        else if (raw.startsWith("```")) raw = raw.slice(3);
-        if (raw.endsWith("```")) raw = raw.slice(0, -3);
+        if (raw.startsWith("\`\`\`json")) raw = raw.slice(7);
+        else if (raw.startsWith("\`\`\`")) raw = raw.slice(3);
+        if (raw.endsWith("\`\`\`")) raw = raw.slice(0, -3);
 
         const parsed = JSON.parse(raw.trim());
 
         document.getElementById('summaryText').textContent = parsed.summary;
-        document.getElementById('bottomLineText').innerHTML = parsed.bottom_line.replace(/\n/g, '<br>');
+        document.getElementById('bottomLineText').innerHTML = parsed.bottom_line.replace(/\\n/g, '<br>');
 
         const list = document.getElementById('actionList');
         list.innerHTML = '';
@@ -414,7 +460,7 @@ ${input}
         console.error(err);
         loader.style.display = 'none';
         btn.disabled = false;
-        alert("Sorry, could not translate right now. Please verify your connection or try a shorter excerpt.");
+        alert("Translation error: " + err.message + "\n\nPlease make sure you are using a permanent Gemini API key (starts with 'AIzaSy...') from https://aistudio.google.com/app/apikey.");
       }
     }
   </script>
