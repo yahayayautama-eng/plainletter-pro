@@ -115,17 +115,19 @@
 
     .key-bar input {
       flex: 1;
-      padding: 10px 14px;
-      border: 1px solid var(--line);
-      border-radius: 8px;
+      padding: 11px 14px;
+      border: 1.5px solid var(--line);
+      border-radius: 10px;
       font-size: 0.9rem;
       background: #fdfcfb;
       color: var(--ink);
+      transition: border-color 0.2s;
     }
 
     .key-bar input:focus {
       outline: none;
       border-color: var(--teal);
+      box-shadow: 0 0 0 3px var(--teal-soft);
     }
 
     button {
@@ -315,10 +317,10 @@
     <div class="input-card">
       <label for="letterInput">Confusing Document Text</label>
       <textarea id="letterInput" placeholder="Example: 'Your claim #82910 has been processed with code CO-16 (Claim/service lacks information or has submission/billing error(s)...'"></textarea>
-      
+
       <div class="key-bar">
-        <input type="password" id="apiKeyInput" placeholder="Gemini API Key (saved in browser)" />
-        <a href="https://aistudio.google.com/app/apikey" target="_blank" style="font-size:0.82rem; color:var(--teal); text-decoration:underline; white-space:nowrap;">Get Free Key</a>
+        <input type="password" id="apiKeyInput" placeholder="Gemini API Key (auto-saved in your browser)" />
+        <a href="https://aistudio.google.com/app/apikey" target="_blank" style="font-size:0.82rem; color:var(--teal); text-decoration:underline; white-space:nowrap;">Get Key</a>
       </div>
 
       <button id="translateBtn" onclick="translateDocument()">
@@ -358,15 +360,15 @@
     </div>
 
     <footer>
-      Powered by Tendercraft • <a href="https://yahayayautama-eng.github.io/tendercraft-bio/" target="_blank">View All Tendercraft Packs</a>
+      Powered by Tendercraft • <a href="https://tendercraft-bio.vercel.app" target="_blank">View All Tendercraft Packs</a>
     </footer>
   </div>
 
   <script>
-    // Load saved API key from localStorage if exists
-    const savedKey = localStorage.getItem("PLAINLETTER_API_KEY");
-    if (savedKey) {
-      document.getElementById('apiKeyInput').value = savedKey;
+    // Restore cached key from localStorage
+    const cachedKey = localStorage.getItem("PLAINLETTER_GEMINI_KEY");
+    if (cachedKey) {
+      document.getElementById('apiKeyInput').value = cachedKey;
     }
 
     async function translateDocument() {
@@ -379,14 +381,14 @@
       }
 
       if (!key) {
-        key = prompt("Please enter your free Google Gemini API Key:\n(You can get one in 10 seconds at https://aistudio.google.com/app/apikey)");
+        key = prompt("Please enter your Google Gemini API Key:\n(Get one in 10 seconds at https://aistudio.google.com/app/apikey)");
         if (!key || !key.trim()) return;
         key = key.trim();
         document.getElementById('apiKeyInput').value = key;
       }
 
-      // Save to localStorage for frictionless future visits
-      localStorage.setItem("PLAINLETTER_API_KEY", key);
+      // Save key locally in the browser
+      localStorage.setItem("PLAINLETTER_GEMINI_KEY", key);
 
       const btn = document.getElementById('translateBtn');
       const loader = document.getElementById('loader');
@@ -413,16 +415,29 @@ Letter:
 ${input}
       `;
 
-      const endpoint = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${key}`;
+      // Use gemini-3.8-flash (with automatic fallback to gemini-flash-latest)
+      let endpoint = `https://generativelanguage.googleapis.com/v1beta/models/gemini-3.8-flash:generateContent?key=${key}`;
 
       try {
-        const response = await fetch(endpoint, {
+        let response = await fetch(endpoint, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
             contents: [{ parts: [{ text: prompt }] }]
           })
         });
+
+        // If gemini-3.8-flash is busy or unavailable, fall back to gemini-flash-latest
+        if (!response.ok && (response.status === 404 || response.status === 503)) {
+          const fallbackEndpoint = `https://generativelanguage.googleapis.com/v1beta/models/gemini-flash-latest:generateContent?key=${key}`;
+          response = await fetch(fallbackEndpoint, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              contents: [{ parts: [{ text: prompt }] }]
+            })
+          });
+        }
 
         if (!response.ok) {
           const errData = await response.json().catch(() => ({}));
@@ -460,7 +475,7 @@ ${input}
         console.error(err);
         loader.style.display = 'none';
         btn.disabled = false;
-        alert("Translation error: " + err.message + "\n\nPlease make sure you are using a permanent Gemini API key (starts with 'AIzaSy...') from https://aistudio.google.com/app/apikey.");
+        alert("Translation error: " + err.message);
       }
     }
   </script>
